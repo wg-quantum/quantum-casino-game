@@ -4,7 +4,9 @@ using UnityEngine.EventSystems;
 public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
 {
     [Header("スナップ設定")]
-    [SerializeField] private float snapDistance = 80f; // スナップする距離
+    [SerializeField] private float snapDistance = 150f;
+    [Header("デバッグ")]
+    [SerializeField] private bool showDebugInfo = false;
     
     private Canvas canvas;
     private RectTransform rectTransform;
@@ -38,22 +40,19 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
     public void OnDrag(PointerEventData eventData)
     {
         rectTransform.anchoredPosition += eventData.delta / canvas.scaleFactor;
-        
-        // ドラッグ中に最も近いスロットを検索
         UpdateNearestSlot();
     }
 
     public void OnEndDrag(PointerEventData eventData)
     {
         Debug.Log($"ドラッグ終了: {gameObject.name}");
-        Debug.Log($"pointerEnter: {eventData.pointerEnter?.name}");
         
         canvasGroup.alpha = 1f;
         canvasGroup.blocksRaycasts = true;
         
         bool dropSuccessful = false;
         
-        // 1. まず直接ドロップを試行
+        // 1. 直接ドロップを試行
         DropSlot directSlot = null;
         if (eventData.pointerEnter != null)
         {
@@ -66,7 +65,7 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
             directSlot.PlaceItem(gameObject);
             dropSuccessful = true;
         }
-        // 2. 直接ドロップできなかった場合、スナップを試行
+        // 2. スナップを試行
         else if (nearestSlot != null && !nearestSlot.HasItem())
         {
             Debug.Log($"スナップドロップ成功: {nearestSlot.name}");
@@ -74,7 +73,7 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
             dropSuccessful = true;
         }
         
-        // 3. どちらも失敗した場合は元の位置に戻す
+        // 3. 失敗した場合は元の位置に戻す
         if (!dropSuccessful)
         {
             Debug.Log("ドロップ失敗 - 元の位置に戻します");
@@ -82,14 +81,12 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
             rectTransform.anchoredPosition = originalPosition;
         }
         
-        // ハイライトをクリア
         ClearAllHighlights();
         nearestSlot = null;
     }
     
     private void UpdateNearestSlot()
     {
-        // 全てのDropSlotを検索
         DropSlot[] allSlots = FindObjectsByType<DropSlot>(FindObjectsSortMode.None);
         DropSlot closestSlot = null;
         float closestDistance = float.MaxValue;
@@ -102,14 +99,15 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
         
         foreach (DropSlot slot in allSlots)
         {
-            // 既にアイテムが配置されているスロットはスキップ
             if (slot.HasItem()) continue;
             
-            // 距離を計算
-            float distance = Vector2.Distance(
-                rectTransform.anchoredPosition, 
-                slot.GetComponent<RectTransform>().anchoredPosition
-            );
+            // 重要：両方のオブジェクトが同じ座標系で距離を計算
+            float distance = GetUIDistance(rectTransform, slot.GetComponent<RectTransform>());
+            
+            if (showDebugInfo)
+            {
+                Debug.Log($"スロット: {slot.name}, 距離: {distance:F1}, 判定距離: {snapDistance}");
+            }
                 
             if (distance < closestDistance && distance <= snapDistance)
             {
@@ -118,13 +116,26 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
             }
         }
         
-        // 最も近いスロットをハイライト
         nearestSlot = closestSlot;
         if (nearestSlot != null)
         {
             nearestSlot.SetSnapHighlight(true);
-            Debug.Log($"スナップ範囲: {nearestSlot.name} (距離: {closestDistance:F1})");
+            if (showDebugInfo) Debug.Log($"スナップハイライト: {nearestSlot.name} (距離: {closestDistance:F1})");
         }
+    }
+    
+    // UI要素間の正確な距離を計算
+    private float GetUIDistance(RectTransform rect1, RectTransform rect2)
+    {
+        // 両方のRectTransformのワールド座標を取得
+        Vector3 pos1 = rect1.position;
+        Vector3 pos2 = rect2.position;
+        
+        // ワールド座標での距離を計算してUI座標に変換
+        float worldDistance = Vector3.Distance(pos1, pos2);
+        
+        // Canvas の scale factor を考慮
+        return worldDistance / canvas.scaleFactor;
     }
     
     private void ClearAllHighlights()
@@ -133,6 +144,16 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
         foreach (DropSlot slot in allSlots)
         {
             slot.SetSnapHighlight(false);
+        }
+    }
+    
+    // Scene view でスナップ範囲を表示
+    void OnDrawGizmosSelected()
+    {
+        if (Application.isPlaying)
+        {
+            Gizmos.color = Color.green;
+            Gizmos.DrawWireSphere(transform.position, snapDistance * canvas.scaleFactor);
         }
     }
 }
