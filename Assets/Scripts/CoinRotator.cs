@@ -11,6 +11,10 @@ public class CoinRotator : MonoBehaviour
     
     // 量子ゲート検出器への参照
     private QuantumGateDetector quantumGateDetector;
+    
+    // Gate_Uの確率計算用（停止要求時に一度だけ決定）
+    private bool gate_U_Result = false;
+    private bool gate_U_ResultCalculated = false;
 
     void Start()
     {
@@ -51,20 +55,41 @@ public class CoinRotator : MonoBehaviour
     {
         Debug.Log("Stop requested");
         shouldStop = true;
+        gate_U_ResultCalculated = false; // 新しい停止要求時にリセット
     }
     
     private float GetTargetRotation()
     {
-        // 量子ゲートが有効な場合は表（0度）、そうでなければ裏（180度）
-        if (quantumGateDetector != null && quantumGateDetector.IsQuantumGateActive())
-        {
-            Debug.Log("量子ゲート有効 - 表で停止");
-            return 0f; // 表
-        }
-        else
+        if (quantumGateDetector == null || !quantumGateDetector.IsQuantumGateActive())
         {
             Debug.Log("通常モード - 裏で停止");
             return 180f; // 裏
+        }
+        
+        string gateType = quantumGateDetector.GetActiveGateType();
+        
+        switch (gateType)
+        {
+            case "Gate_X":
+                Debug.Log("Gate_X有効 - 表で停止");
+                return 0f; // 表
+                
+            case "Gate_U":
+                // Gate_Uの場合は50%の確率（停止要求時に一度だけ計算）
+                if (!gate_U_ResultCalculated)
+                {
+                    gate_U_Result = Random.Range(0f, 1f) < 0.5f; // 50%の確率
+                    gate_U_ResultCalculated = true;
+                    
+                    string resultText = gate_U_Result ? "表" : "裏";
+                    Debug.Log($"Gate_U確率計算結果: {resultText}で停止");
+                }
+                
+                return gate_U_Result ? 0f : 180f; // 表または裏
+                
+            default:
+                Debug.Log("通常モード - 裏で停止");
+                return 180f; // 裏
         }
     }
 }
