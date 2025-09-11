@@ -4,7 +4,7 @@ using UnityEngine.EventSystems;
 public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler
 {
     [Header("スナップ設定")]
-    [SerializeField] private float snapDistance = 150f;
+    [SerializeField] private float snapDistance = 1f;
     [Header("デバッグ")]
     [SerializeField] private bool showDebugInfo = false;
     

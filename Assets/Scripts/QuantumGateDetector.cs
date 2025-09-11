@@ -4,11 +4,11 @@ public class QuantumGateDetector : MonoBehaviour
 {
     [Header("設定")]
     [SerializeField] private string gateSlotName = "GateSlot"; // スロットの名前
-    [SerializeField] private string quantumGateName = "Gate_X"; // 量子ゲートの名前
+    [SerializeField] private string[] quantumGateNames = {"Gate_X", "Gate_U"}; // 対応する量子ゲートの名前
     [SerializeField] private bool showDebugInfo = true; // デバッグ情報の表示
     
     private DropSlot gateSlot;
-    private bool lastQuantumGateState = false;
+    private string lastQuantumGateType = "";
     
     void Start()
     {
@@ -39,18 +39,22 @@ public class QuantumGateDetector : MonoBehaviour
     {
         if (gateSlot == null) return;
         
-        bool isQuantumGateActive = IsQuantumGateInSlot();
+        string currentGateType = GetQuantumGateType();
         
         // 状態変更があった場合のみログ出力
-        if (isQuantumGateActive != lastQuantumGateState)
+        if (currentGateType != lastQuantumGateType)
         {
-            lastQuantumGateState = isQuantumGateActive;
+            lastQuantumGateType = currentGateType;
             
             if (showDebugInfo)
             {
-                if (isQuantumGateActive)
+                if (currentGateType == "Gate_X")
                 {
-                    Debug.Log("🔬 量子ゲート検出: コインは表で止まります");
+                    Debug.Log("🔬 Gate_X検出: コインは表で止まります");
+                }
+                else if (currentGateType == "Gate_U")
+                {
+                    Debug.Log("🎲 Gate_U検出: コインは50%の確率で表で止まります");
                 }
                 else
                 {
@@ -60,9 +64,9 @@ public class QuantumGateDetector : MonoBehaviour
         }
     }
     
-    private bool IsQuantumGateInSlot()
+    private string GetQuantumGateType()
     {
-        if (gateSlot == null || !gateSlot.HasItem()) return false;
+        if (gateSlot == null || !gateSlot.HasItem()) return "";
         
         // スロット内のアイテムを検索
         Transform slotTransform = gateSlot.transform;
@@ -74,23 +78,33 @@ public class QuantumGateDetector : MonoBehaviour
             // DropArea は除外
             if (child.name == "DropArea") continue;
             
-            // 量子ゲートかチェック
-            if (child.name.Contains(quantumGateName))
+            // 各量子ゲートをチェック
+            foreach (string gateName in quantumGateNames)
             {
-                if (showDebugInfo)
+                if (child.name.Contains(gateName))
                 {
-                    Debug.Log($"量子ゲート発見: {child.name}");
+                    if (showDebugInfo)
+                    {
+                        Debug.Log($"量子ゲート発見: {child.name} (タイプ: {gateName})");
+                    }
+                    return gateName;
                 }
-                return true;
             }
         }
         
-        return false;
+        return "";
     }
     
     // 外部から量子ゲートの状態を取得（CoinRotatorから呼ばれる）
     public bool IsQuantumGateActive()
     {
-        return IsQuantumGateInSlot();
+        string gateType = GetQuantumGateType();
+        return !string.IsNullOrEmpty(gateType);
+    }
+    
+    // 量子ゲートのタイプを取得
+    public string GetActiveGateType()
+    {
+        return GetQuantumGateType();
     }
 }
