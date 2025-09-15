@@ -15,13 +15,38 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
     private Transform originalParent;
     private DropSlot nearestSlot;
     
+    // ドラッグ開始時の情報
+    private bool wasInSlot = false;
+    private DropSlot sourceSlot = null;
+    
+    // 真の元の位置（最初にゲームが開始された時の位置）
+    private Vector2 trueOriginalPosition;
+    private Transform trueOriginalParent;
+    private bool originalPositionSaved = false;
+
     void Start()
     {
         rectTransform = GetComponent<RectTransform>();
         canvasGroup = GetComponent<CanvasGroup>();
         canvas = GetComponentInParent<Canvas>();
         
+        // 真の元の位置を保存（最初の1回だけ）
+        SaveTrueOriginalPosition();
+        
         Debug.Log($"DraggableItem初期化: {gameObject.name}");
+        Debug.Log($"真の元の位置: {trueOriginalPosition}, 親: {trueOriginalParent?.name}");
+    }
+    
+    private void SaveTrueOriginalPosition()
+    {
+        if (!originalPositionSaved)
+        {
+            trueOriginalPosition = rectTransform.anchoredPosition;
+            trueOriginalParent = transform.parent;
+            originalPositionSaved = true;
+            
+            Debug.Log($"真の元の位置を保存: {gameObject.name} at {trueOriginalPosition}");
+        }
     }
 
     public void OnBeginDrag(PointerEventData eventData)
@@ -30,6 +55,17 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
         
         originalPosition = rectTransform.anchoredPosition;
         originalParent = transform.parent;
+        
+        // ドラッグ開始時にスロット内にいるかチェック
+        sourceSlot = originalParent.GetComponent<DropSlot>();
+        wasInSlot = (sourceSlot != null);
+        
+        if (wasInSlot)
+        {
+            // スロットから一時的に削除
+            sourceSlot.RemoveItem();
+            Debug.Log($"スロットから一時的に削除: {sourceSlot.name}");
+        }
         
         canvasGroup.alpha = 0.6f;
         canvasGroup.blocksRaycasts = false;
@@ -51,38 +87,121 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
         canvasGroup.blocksRaycasts = true;
         
         bool dropSuccessful = false;
+        DropSlot targetSlot = null;
         
         // 1. 直接ドロップを試行
-        DropSlot directSlot = null;
         if (eventData.pointerEnter != null)
         {
-            directSlot = eventData.pointerEnter.GetComponent<DropSlot>();
+            targetSlot = eventData.pointerEnter.GetComponent<DropSlot>();
         }
         
-        if (directSlot != null && !directSlot.HasItem())
+        if (targetSlot != null)
         {
-            Debug.Log("直接ドロップ成功!");
-            directSlot.PlaceItem(gameObject);
+            Debug.Log($"直接ドロップ成功: {targetSlot.name}");
+            targetSlot.PlaceItem(gameObject);
             dropSuccessful = true;
         }
         // 2. スナップを試行
-        else if (nearestSlot != null && !nearestSlot.HasItem())
+        else if (nearestSlot != null)
         {
             Debug.Log($"スナップドロップ成功: {nearestSlot.name}");
             nearestSlot.PlaceItem(gameObject);
             dropSuccessful = true;
         }
         
-        // 3. 失敗した場合は元の位置に戻す
+        // 3. ドロップに失敗した場合の処理
         if (!dropSuccessful)
         {
-            Debug.Log("ドロップ失敗 - 元の位置に戻します");
-            transform.SetParent(originalParent);
-            rectTransform.anchoredPosition = originalPosition;
+            if (wasInSlot)
+            {
+                // 元々スロットにあった場合の処理
+                if (IsDroppedOutsideAllSlots(eventData))
+                {
+                    // スロット外にドロップした場合：真の元の位置に戻す
+                    ReturnToTrueOriginalPosition();
+                    Debug.Log("スロット外にドロップ - 真の元の位置に戻します");
+                }
+                else
+                {
+                    // 無効な場所の場合：元のスロットに戻す
+                    ReturnToOriginalSlot();
+                    Debug.Log("無効な場所 - 元のスロットに戻します");
+                }
+            }
+            else
+            {
+                // 元々自由な場所にあった場合
+                if (IsDroppedOutsideAllSlots(eventData))
+                {
+                    // スロット外にドロップ：真の元の位置に戻す
+                    ReturnToTrueOriginalPosition();
+                    Debug.Log("スロット外にドロップ - 真の元の位置に戻します");
+                }
+                else
+                {
+                    // 無効な場所：直前の位置に戻す
+                    transform.SetParent(originalParent);
+                    rectTransform.anchoredPosition = originalPosition;
+                    Debug.Log("無効な場所 - 直前の位置に戻します");
+                }
+            }
         }
         
         ClearAllHighlights();
         nearestSlot = null;
+        
+        // 状態をリセット
+        wasInSlot = false;
+        sourceSlot = null;
+    }
+    
+    private bool IsDroppedOutsideAllSlots(PointerEventData eventData)
+    {
+        // ドロップした場所がUI要素でない、またはDropSlotでない場合
+        if (eventData.pointerEnter == null)
+        {
+            return true; // UI外にドロップ
+        }
+        
+        // DropSlotでもDropAreaでもない場合
+        DropSlot slot = eventData.pointerEnter.GetComponent<DropSlot>();
+        DropAreaHandler dropArea = eventData.pointerEnter.GetComponent<DropAreaHandler>();
+        
+        return (slot == null && dropArea == null);
+    }
+    
+    private void ReturnToTrueOriginalPosition()
+    {
+        // 真の元の位置に戻す
+        if (trueOriginalParent != null)
+        {
+            transform.SetParent(trueOriginalParent);
+            rectTransform.anchoredPosition = trueOriginalPosition;
+            Debug.Log($"真の元の位置に復帰: {gameObject.name} at {trueOriginalPosition}");
+        }
+        else
+        {
+            // フォールバック：Canvas直下に配置
+            transform.SetParent(canvas.transform);
+            rectTransform.anchoredPosition = trueOriginalPosition;
+            Debug.LogWarning($"真の元の親が見つからないため、Canvas直下に配置: {gameObject.name}");
+        }
+    }
+    
+    private void ReturnToOriginalSlot()
+    {
+        if (sourceSlot != null)
+        {
+            transform.SetParent(sourceSlot.transform);
+            rectTransform.anchoredPosition = Vector2.zero;
+            sourceSlot.SetCurrentItem(gameObject);
+        }
+        else
+        {
+            // フォールバック
+            transform.SetParent(originalParent);
+            rectTransform.anchoredPosition = originalPosition;
+        }
     }
     
     private void UpdateNearestSlot()
@@ -99,9 +218,6 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
         
         foreach (DropSlot slot in allSlots)
         {
-            if (slot.HasItem()) continue;
-            
-            // 重要：両方のオブジェクトが同じ座標系で距離を計算
             float distance = GetUIDistance(rectTransform, slot.GetComponent<RectTransform>());
             
             if (showDebugInfo)
@@ -124,17 +240,12 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
         }
     }
     
-    // UI要素間の正確な距離を計算
     private float GetUIDistance(RectTransform rect1, RectTransform rect2)
     {
-        // 両方のRectTransformのワールド座標を取得
         Vector3 pos1 = rect1.position;
         Vector3 pos2 = rect2.position;
         
-        // ワールド座標での距離を計算してUI座標に変換
         float worldDistance = Vector3.Distance(pos1, pos2);
-        
-        // Canvas の scale factor を考慮
         return worldDistance / canvas.scaleFactor;
     }
     
@@ -147,7 +258,25 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
         }
     }
     
-    // Scene view でスナップ範囲を表示
+    // 外部から真の元の位置を再設定する場合（必要に応じて）
+    public void SetTrueOriginalPosition(Vector2 position, Transform parent)
+    {
+        trueOriginalPosition = position;
+        trueOriginalParent = parent;
+        originalPositionSaved = true;
+        
+        Debug.Log($"真の元の位置を手動設定: {gameObject.name} at {position}");
+    }
+    
+    // 現在の位置を新しい元の位置として保存
+    public void UpdateTrueOriginalPosition()
+    {
+        trueOriginalPosition = rectTransform.anchoredPosition;
+        trueOriginalParent = transform.parent;
+        
+        Debug.Log($"真の元の位置を更新: {gameObject.name} at {trueOriginalPosition}");
+    }
+    
     void OnDrawGizmosSelected()
     {
         if (Application.isPlaying)
