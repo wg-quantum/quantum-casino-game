@@ -50,7 +50,7 @@ public class CoinRotator : MonoBehaviour
             bubbleText.text = "Adjust the circuit to make the coin face up!";
         }
         
-        Debug.Log("コイン初期化：表で静止");
+        Debug.Log($"コイン初期化：表で静止 (Scene: {SceneManager.GetActiveScene().name})");
     }
 
     void Update()
@@ -183,9 +183,101 @@ public class CoinRotator : MonoBehaviour
     
     private float GetTargetRotation()
     {
+        string currentScene = SceneManager.GetActiveScene().name;
+        
+        // シーン別の処理
+        switch (currentScene)
+        {
+            case "CoinTossSceneX":
+                return GetTargetRotationForSceneX();
+                
+            case "CoinTossSceneH":
+                return GetTargetRotationForSceneH();
+                
+            default:
+                // デフォルトの処理（従来の処理）
+                return GetTargetRotationDefault();
+        }
+    }
+    
+    private float GetTargetRotationForSceneX()
+    {
+        // CoinTossSceneX: 最初は裏、Gate_Xで表
         if (quantumGateDetector == null || !quantumGateDetector.IsQuantumGateActive())
         {
-            Debug.Log("通常モード - 裏で停止");
+            Debug.Log("CoinTossSceneX - 通常モード: 裏で停止");
+            return 180f; // 裏
+        }
+        
+        string gateType = quantumGateDetector.GetActiveGateType();
+        
+        if (gateType == "Gate_X")
+        {
+            Debug.Log("CoinTossSceneX - Gate_X有効: 表で停止");
+            return 0f; // 表
+        }
+        else
+        {
+            // その他の場合：50%の確率
+            Debug.Log("CoinTossSceneH - その他: 50%の確率");
+            return GetRandomResult();
+        }
+    }
+    
+    private float GetTargetRotationForSceneH()
+    {
+        // CoinTossSceneH: 複数スロット対応の複雑なロジック
+        if (quantumGateDetector == null)
+        {
+            Debug.Log("CoinTossSceneH - QuantumGateDetector未検出: 50%の確率");
+            return GetRandomResult();
+        }
+        
+        var gateInfo = quantumGateDetector.GetAllGateInfo();
+        
+        // ゲートが配置されていない場合：50%の確率
+        if (gateInfo.Count == 0)
+        {
+            Debug.Log("CoinTossSceneH - ゲートなし: 50%の確率");
+            return GetRandomResult();
+        }
+        
+        // ゲートの組み合わせによる処理
+        bool hasGateX = gateInfo.ContainsKey("Gate_X") && gateInfo["Gate_X"] > 0;
+        bool hasGateH = gateInfo.ContainsKey("Gate_H") && gateInfo["Gate_H"] > 0;
+        
+        if (hasGateX && hasGateH)
+        {
+            // Gate_X と Gate_H が両方配置されている場合：表
+            Debug.Log("CoinTossSceneH - Gate_X + Gate_H: 表で停止");
+            return 0f; // 表
+        }
+        else if (hasGateX && !hasGateH)
+        {
+            // Gate_X のみ：変化なし（50%の確率）
+            Debug.Log("CoinTossSceneH - Gate_Xのみ: 50%の確率");
+            return GetRandomResult();
+        }
+        else if (!hasGateX && hasGateH)
+        {
+            // Gate_H のみ：裏
+            Debug.Log("CoinTossSceneH - Gate_Hのみ: 裏で停止");
+            return 180f; // 裏
+        }
+        else
+        {
+            // その他の場合：50%の確率
+            Debug.Log("CoinTossSceneH - その他: 50%の確率");
+            return GetRandomResult();
+        }
+    }
+    
+    private float GetTargetRotationDefault()
+    {
+        // デフォルトの処理（従来通り）
+        if (quantumGateDetector == null || !quantumGateDetector.IsQuantumGateActive())
+        {
+            Debug.Log("Default - 通常モード: 裏で停止");
             return 180f; // 裏
         }
         
@@ -194,26 +286,31 @@ public class CoinRotator : MonoBehaviour
         switch (gateType)
         {
             case "Gate_X":
-                Debug.Log("Gate_X有効 - 表で停止");
+                Debug.Log("Default - Gate_X有効: 表で停止");
                 return 0f; // 表
                 
             case "Gate_H":
-                // Gate_Hの場合は50%の確率（停止要求時に一度だけ計算）
-                if (!gateRandomResultCalculated)
-                {
-                    gateRandomResult = Random.Range(0f, 1f) < 0.5f; // 50%の確率
-                    gateRandomResultCalculated = true;
-                    
-                    string resultText = gateRandomResult ? "表" : "裏";
-                    Debug.Log($"{gateType}確率計算結果: {resultText}で停止");
-                }
-                
-                return gateRandomResult ? 0f : 180f; // 表または裏
+                return GetRandomResult();
                 
             default:
-                Debug.Log("通常モード - 裏で停止");
+                Debug.Log("Default - 通常モード: 裏で停止");
                 return 180f; // 裏
         }
+    }
+    
+    private float GetRandomResult()
+    {
+        // 50%の確率計算（停止要求時に一度だけ計算）
+        if (!gateRandomResultCalculated)
+        {
+            gateRandomResult = Random.Range(0f, 1f) < 0.5f; // 50%の確率
+            gateRandomResultCalculated = true;
+            
+            string resultText = gateRandomResult ? "表" : "裏";
+            Debug.Log($"50%確率計算結果: {resultText}で停止");
+        }
+        
+        return gateRandomResult ? 0f : 180f; // 表または裏
     }
 
     private void UpdateBubbleTextAndScene(string result)
@@ -225,16 +322,32 @@ public class CoinRotator : MonoBehaviour
             {
                 bubbleText.text = "Congratulations!";
                 
-                // 現在のシーンがCoinTossSceneHでない場合のみシーン遷移
-                if (SceneManager.GetActiveScene().name != "CoinTossSceneH")
+                // シーン遷移の処理
+                string currentScene = SceneManager.GetActiveScene().name;
+                string nextScene = GetNextScene(currentScene);
+                
+                if (!string.IsNullOrEmpty(nextScene) && currentScene != nextScene)
                 {
-                    StartCoroutine(WaitAndLoadScene(2f, "CoinTossSceneH"));
+                    StartCoroutine(WaitAndLoadScene(2f, nextScene));
                 }
             }
             else
             {
                 bubbleText.text = "Try Again!";
             }
+        }
+    }
+    
+    private string GetNextScene(string currentScene)
+    {
+        switch (currentScene)
+        {
+            case "CoinTossSceneX":
+                return "CoinTossSceneH";
+            case "CoinTossSceneH":
+                return ""; // 最終シーンなので遷移しない
+            default:
+                return "";
         }
     }
 
@@ -269,6 +382,7 @@ public class CoinRotator : MonoBehaviour
     public void LogCurrentState()
     {
         Debug.Log($"=== Coin State ===");
+        Debug.Log($"Scene: {SceneManager.GetActiveScene().name}");
         Debug.Log($"Is Rotating: {isRotating}");
         Debug.Log($"Is Stopped: {isStopped}");
         Debug.Log($"Should Stop: {shouldStop}");
