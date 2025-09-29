@@ -196,6 +196,7 @@ Assets/
 問合せ窓口：IBM 沼田 (kifumi@jp.ibm.com)
 
 © Copyright IBM Corp. 2025
+
 ---
 
 ## 貢献方法
